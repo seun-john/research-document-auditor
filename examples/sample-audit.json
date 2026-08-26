@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.2",
+  "source": "tests\\fixtures\\sample_manuscript.md",
+  "profile": "thesis",
+  "summary": {
+    "total": 8,
+    "by_severity": {
+      "high": 1,
+      "medium": 6,
+      "low": 1,
+      "info": 0
+    }
+  },
+  "stats": {
+    "paragraphs": 13,
+    "words": 91,
+    "headings": 6,
+    "tables": 0,
+    "drawings": 0,
+    "citation_occurrences": 1,
+    "unique_citations": 1,
+    "bibliography_entries": 1,
+    "parsed_bibliography_entries": 1,
+    "bibliography_entries_with_doi": 0,
+    "finding_codes": {
+      "CIT002": 1,
+      "ALG003": 1,
+      "CIT003": 1,
+      "NUM001": 1,
+      "NUM002": 1,
+      "REQ_ETHICS": 1,
+      "VIS001": 1,
+      "REQ_AI_USE": 1
+    }
+  },
+  "coverage": {
+    "citation_bibliography_matching": "automated (author–date styles)",
+    "numeric_consistency": "automated heuristic screening",
+    "objective_question_finding_alignment": "automated lexical screening",
+    "reference_existence_and_metadata": "not run (use --online-references)",
+    "retraction_status": "not run (use --online-references)",
+    "claim_to_source_support": "not automated in v0.2; requires reliable source full text",
+    "institutional_rules": "default public profile; custom NovaPoint rules are a later private layer"
+  },
+  "reference_verification": {
+    "enabled": false,
+    "summary": {},
+    "retraction_summary": {},
+    "results": []
+  },
+  "findings": [
+    {
+      "code": "CIT002",
+      "severity": "high",
+      "title": "In-text citation missing from bibliography",
+      "message": "Doe (2021) appears in the text but no matching bibliography entry was found.",
+      "location": {
+        "paragraph": 6,
+        "section": null
+      },
+      "evidence": [
+        "Doe, 2021"
+      ],
+      "suggestion": "Add the source to the bibliography or correct the in-text citation.",
+      "confidence": "high"
+    },
+    {
+      "code": "ALG003",
+      "severity": "medium",
+      "title": "Objective may not be addressed in findings",
+      "message": "No finding or conclusion item has strong keyword overlap with this objective.",
+      "location": {
+        "paragraph": 2,
+        "section": "Objectives"
+      },
+      "evidence": [
+        "Assess staff retention among nurses in Lagos hospitals.",
+        "Closest finding: The analysed sample included 140 participants. The response rate was 80% during data collection. The final response rate was 75%."
+      ],
+      "suggestion": "Confirm that the findings explicitly answer this objective.",
+      "confidence": "low"
+    },
+    {
+      "code": "CIT003",
+      "severity": "medium",
+      "title": "Bibliography entry is not cited",
+      "message": "Smith (2020) is listed in the bibliography but was not found in the body text.",
+      "location": {
+        "paragraph": 13,
+        "section": "References"
+      },
+      "evidence": [
+        "Smith, J. (2020). Staff retention in hospitals. Journal of Health Research, 2(1), 1–10."
+      ],
+      "suggestion": "Cite the source in the text or remove it from the bibliography.",
+      "confidence": "medium"
+    },
+    {
+      "code": "NUM001",
+      "severity": "medium",
+      "title": "Conflicting sample-size candidates",
+      "message": "The manuscript appears to report 2 different sample sizes.",
+      "location": {
+        "paragraph": null,
+        "section": null
+      },
+      "evidence": [
+        "n=120 at paragraph(s) 6",
+        "n=140 at paragraph(s) 8"
+      ],
+      "suggestion": "Confirm whether these values describe recruited, eligible, analysed, or subgroup samples and label them explicitly.",
+      "confidence": "medium"
+    },
+    {
+      "code": "NUM002",
+      "severity": "medium",
+      "title": "Conflicting percentage candidates",
+      "message": "Different values are reported for response rate: 80%, 75%.",
+      "location": {
+        "paragraph": null,
+        "section": null
+      },
+      "evidence": [
+        "80% at paragraph(s) 8",
+        "75% at paragraph(s) 8"
+      ],
+      "suggestion": "Confirm whether the percentages use different populations or time points and label the denominator for each.",
+      "confidence": "medium"
+    },
+    {
+      "code": "REQ_ETHICS",
+      "severity": "medium",
+      "title": "Missing ethics or consent statement",
+      "message": "No ethics or consent statement was detected under the thesis profile.",
+      "location": {
+        "paragraph": null,
+        "section": null
+      },
+      "evidence": [],
+      "suggestion": "Add an ethics or consent statement, or disable this rule in an institutional profile when it does not apply.",
+      "confidence": "medium"
+    },
+    {
+      "code": "VIS001",
+      "severity": "medium",
+      "title": "Table is not mentioned in the text",
+      "message": "Table 1 has a caption but no cross-reference elsewhere in the manuscript.",
+      "location": {
+        "paragraph": 9,
+        "section": null
+      },
+      "evidence": [
+        "Table 1 Respondent characteristics"
+      ],
+      "suggestion": "Discuss Table 1 in the body text.",
+      "confidence": "high"
+    },
+    {
+      "code": "REQ_AI_USE",
+      "severity": "low",
+      "title": "Missing AI-use disclosure",
+      "message": "No AI-use disclosure was detected under the thesis profile.",
+      "location": {
+        "paragraph": null,
+        "section": null
+      },
+      "evidence": [],
+      "suggestion": "Add an AI-use disclosure, or disable this rule in an institutional profile when it does not apply.",
+      "confidence": "medium"
+    }
+  ]
+}

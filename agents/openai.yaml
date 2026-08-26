@@ -1,0 +1,8 @@
+interface:
+  display_name: "Research Document Auditor"
+  short_description: "Audit research manuscripts before submission"
+  default_prompt: "Use $research-document-auditor to audit this manuscript and prioritise evidence-backed findings."
+
+policy:
+  allow_implicit_invocation: true
+
