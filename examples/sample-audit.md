@@ -23,17 +23,16 @@ Evidence:
 
 **Recommended action:** Add the source to the bibliography or correct the in-text citation.
 
-### 2. [MEDIUM] Objective may not be addressed in findings
+### 2. [MEDIUM] Table is not mentioned in the text
 
-`ALG003` · confidence: low (Objectives, paragraph 2)
+`VIS001` · confidence: high (paragraph 9)
 
-No finding or conclusion item has strong keyword overlap with this objective.
+Table 1 has a caption but no cross-reference elsewhere in the manuscript.
 
 Evidence:
-- Assess staff retention among nurses in Lagos hospitals.
-- Closest finding: The analysed sample included 140 participants. The response rate was 80% during data collection. The final response rate was 75%.
+- Table 1 Respondent characteristics
 
-**Recommended action:** Confirm that the findings explicitly answer this objective.
+**Recommended action:** Discuss Table 1 in the body text.
 
 ### 3. [MEDIUM] Bibliography entry is not cited
 
@@ -78,16 +77,17 @@ No ethics or consent statement was detected under the thesis profile.
 
 **Recommended action:** Add an ethics or consent statement, or disable this rule in an institutional profile when it does not apply.
 
-### 7. [MEDIUM] Table is not mentioned in the text
+### 7. [MEDIUM] Objective may not be addressed in findings
 
-`VIS001` · confidence: high (paragraph 9)
+`ALG003` · confidence: low (Objectives, paragraph 2)
 
-Table 1 has a caption but no cross-reference elsewhere in the manuscript.
+No finding or conclusion item has strong keyword overlap with this objective.
 
 Evidence:
-- Table 1 Respondent characteristics
+- Assess staff retention among nurses in Lagos hospitals.
+- Closest finding: The analysed sample included 140 participants. The response rate was 80% during data collection. The final response rate was 75%.
 
-**Recommended action:** Discuss Table 1 in the body text.
+**Recommended action:** Confirm that the findings explicitly answer this objective.
 
 ### 8. [LOW] Missing AI-use disclosure
 
@@ -100,11 +100,12 @@ No AI-use disclosure was detected under the thesis profile.
 ## Coverage and limits
 
 - **Citation Bibliography Matching:** automated (author–date styles)
+- **Document Extraction:** 100.0% of visible DOCX text recovered
 - **Numeric Consistency:** automated heuristic screening
 - **Objective Question Finding Alignment:** automated lexical screening
 - **Reference Existence And Metadata:** not run (use --online-references)
 - **Retraction Status:** not run (use --online-references)
-- **Claim To Source Support:** not automated in v0.2; requires reliable source full text
+- **Claim To Source Support:** not automated in v0.3; requires reliable source full text
 - **Institutional Rules:** default public profile; custom NovaPoint rules are a later private layer
 
 ## Document statistics
@@ -119,6 +120,10 @@ No AI-use disclosure was detected under the thesis profile.
 - **Bibliography Entries:** 1
 - **Parsed Bibliography Entries:** 1
 - **Bibliography Entries With Doi:** 0
+- **Bibliography Sections:** 1
+- **Body Paragraphs Analysed:** 11
+- **Citation Style:** author-date
+- **Docx Extraction Coverage:** 1.0
 
 > This report is a screening aid. Low-confidence heuristics require human review, and a source not found during an online check is not automatically fabricated.
 

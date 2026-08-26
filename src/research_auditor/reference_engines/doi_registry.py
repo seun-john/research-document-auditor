@@ -1,18 +1,24 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from difflib import SequenceMatcher
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from ..citations import ReferenceEntry
 from ..models import Finding, Location, ReferenceVerification
 
-USER_AGENT = "research-document-auditor/0.2 (NovaPoint Consulting; open metadata verification)"
+USER_AGENT = "research-document-auditor/0.3 (NovaPoint Consulting; open metadata verification)"
+CACHE_VERSION = 2
+SUCCESS_TTL_SECONDS = 180 * 24 * 60 * 60
+NEGATIVE_TTL_SECONDS = 30 * 24 * 60 * 60
 
 
 def _get_json(url: str, bearer: str | None = None) -> tuple[int | None, dict | None, str | None]:
@@ -94,38 +100,98 @@ class JsonRequestCache:
     def __init__(self, filename: str | Path | None) -> None:
         self.path = Path(filename).expanduser().resolve() if filename else None
         self.data: dict[str, dict] = {}
+        self._lock = threading.RLock()
+        self._dirty = 0
         if self.path and self.path.is_file():
             try:
                 loaded = json.loads(self.path.read_text(encoding="utf-8"))
-                self.data = {
-                    url: item for url, item in loaded.items()
-                    if item.get("status") in {200, 404}
-                }
+                entries = loaded.get("entries", {}) if loaded.get("version") == CACHE_VERSION else loaded
+                now = time.time()
+                for key, item in entries.items():
+                    if not isinstance(item, dict) or item.get("status") not in {200, 404}:
+                        continue
+                    timestamp = float(item.get("timestamp", now))
+                    ttl = NEGATIVE_TTL_SECONDS if item.get("status") == 404 else SUCCESS_TTL_SECONDS
+                    if now - timestamp > ttl:
+                        continue
+                    legacy_url = None if re.fullmatch(r"[0-9a-f]{64}", key) else key
+                    cache_key = key if legacy_url is None else self._key(key)
+                    self.data[cache_key] = {
+                        "status": item.get("status"),
+                        "body": self._trim_body(legacy_url, item.get("body")) if legacy_url else item.get("body"),
+                        "timestamp": timestamp,
+                    }
             except (OSError, json.JSONDecodeError):
                 self.data = {}
 
+    @staticmethod
+    def _key(url: str) -> str:
+        return hashlib.sha256(url.encode("utf-8")).hexdigest()
+
     def get(self, url: str) -> tuple[int | None, dict | None, str | None] | None:
-        item = self.data.get(url)
-        if not item:
+        key = self._key(url)
+        with self._lock:
+            item = self.data.get(key)
+            if not item:
+                return None
+            status = item.get("status")
+            ttl = NEGATIVE_TTL_SECONDS if status == 404 else SUCCESS_TTL_SECONDS
+            if status not in {200, 404} or time.time() - float(item.get("timestamp", 0)) > ttl:
+                self.data.pop(key, None)
+                self._dirty += 1
+                return None
+            return status, item.get("body"), None
+
+    @staticmethod
+    def _trim_body(url: str, body: dict | None) -> dict | None:
+        if body is None:
             return None
-        status = item.get("status")
-        if status not in {200, 404}:
-            # Older caches may contain throttling or server failures. These are
-            # transient observations, not reproducible reference evidence.
-            self.data.pop(url, None)
-            return None
-        return status, item.get("body"), None
+        host = urllib.parse.urlsplit(url).hostname or ""
+        if host == "api.openalex.org":
+            return {key: body.get(key) for key in ("id", "title", "is_retracted")}
+        if host == "api.datacite.org":
+            data = body.get("data", {})
+            attrs = data.get("attributes", {})
+            return {"data": {"attributes": {key: attrs.get(key) for key in (
+                "titles", "publicationYear", "creators", "url",
+            )}}}
+        if host == "api.crossref.org":
+            message = body.get("message", {})
+            fields = ("DOI", "title", "author", "issued", "container-title", "URL", "type")
+            if "items" in message:
+                return {"message": {"items": [
+                    {key: item.get(key) for key in fields if key in item}
+                    for item in message.get("items", [])[:5]
+                ]}}
+            return {"message": {key: message.get(key) for key in fields if key in message}}
+        return body
 
     def put(self, url: str, status: int | None, body: dict | None, error: str | None) -> None:
         if not self.path or error or status not in {200, 404}:
             return
-        self.data[url] = {"status": status, "body": body}
+        with self._lock:
+            self.data[self._key(url)] = {
+                "status": status,
+                "body": self._trim_body(url, body),
+                "timestamp": time.time(),
+            }
+            self._dirty += 1
+            checkpoint = self._dirty >= 10
+        if checkpoint:
+            self.save()
 
     def save(self) -> None:
         if not self.path:
             return
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(self.data, ensure_ascii=False), encoding="utf-8")
+        with self._lock:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.path.with_suffix(self.path.suffix + ".tmp")
+            temporary.write_text(
+                json.dumps({"version": CACHE_VERSION, "entries": self.data}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            temporary.replace(self.path)
+            self._dirty = 0
 
 
 class DoiRegistryEngine:
@@ -139,12 +205,17 @@ class DoiRegistryEngine:
         cache_path: str | Path | None = None,
         delay: float = 0.1,
         openalex_api_key: str | None = None,
+        workers: int = 1,
+        progress=None,
     ) -> None:
         self.email = email
         self.cache = JsonRequestCache(cache_path)
         self.delay = max(0.0, delay)
         self.openalex_api_key = openalex_api_key
+        self.workers = max(1, min(int(workers), 16))
+        self.progress = progress
         self._openalex_disabled = False
+        self._state_lock = threading.Lock()
 
     def _request(self, url: str, bearer: str | None = None) -> tuple[int | None, dict | None, str | None]:
         cached = self.cache.get(url)
@@ -178,13 +249,25 @@ class DoiRegistryEngine:
         findings: list[Finding] = []
         verifications: list[ReferenceVerification] = []
         try:
-            for entry in references:
+            def audit_one(entry):
                 if entry.doi:
-                    item_findings, verification = self._audit_doi(entry)
-                else:
-                    item_findings, verification = self._audit_bibliographic(entry)
-                findings.extend(item_findings)
-                verifications.append(verification)
+                    return self._audit_doi(entry)
+                return self._audit_bibliographic(entry)
+
+            def collect(completed):
+                for index, (item_findings, verification) in enumerate(completed, 1):
+                    findings.extend(item_findings)
+                    verifications.append(verification)
+                    if self.progress:
+                        self.progress(index, len(references), references[index - 1])
+
+            if self.workers == 1:
+                collect(map(audit_one, references))
+            else:
+                with ThreadPoolExecutor(
+                    max_workers=self.workers, thread_name_prefix="reference-audit"
+                ) as executor:
+                    collect(executor.map(audit_one, references))
         finally:
             self.cache.save()
         return findings, verifications
@@ -404,19 +487,29 @@ class DoiRegistryEngine:
     ) -> tuple[list[Finding], str]:
         if not doi:
             return [], "NOT_CHECKED_NO_DOI"
+        if re.match(r"^\s*retracted\s*:", title, re.I):
+            return [
+                Finding(
+                    "REF005", "high", "Cited work is marked as retracted",
+                    f"The registered metadata title marks DOI {doi} as retracted.",
+                    Location(entry.paragraph, "References"), [title],
+                    "Review the retraction notice and replace or explicitly contextualise the citation.",
+                )
+            ], "RETRACTED"
         encoded = urllib.parse.quote(doi, safe="/")
-        url = f"https://api.openalex.org/works/https://doi.org/{encoded}"
+        url = f"https://api.openalex.org/works/doi:{encoded}"
         cached = self.cache.get(url)
         if cached is not None:
             status, body, _ = cached
-        elif self._openalex_disabled:
-            return [], "UNAVAILABLE"
         else:
+            with self._state_lock:
+                disabled = self._openalex_disabled
+            if disabled:
+                return [], "UNAVAILABLE"
             status, body, error = self._request(url, bearer=self.openalex_api_key)
             if error or status == 429 or (status is not None and status >= 500):
-                # Once the per-run service budget is exhausted, avoid repeating
-                # the same bounded wait for every remaining DOI.
-                self._openalex_disabled = True
+                with self._state_lock:
+                    self._openalex_disabled = True
         if status == 200 and body and body.get("is_retracted"):
             return [
                 Finding(

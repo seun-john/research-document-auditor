@@ -10,6 +10,18 @@ from .models import Document, Heading, Paragraph
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 
+def _iter_docx_blocks(container: ET.Element):
+    """Yield visible paragraphs and tables through common Word wrappers."""
+    for child in container:
+        if child.tag in {f"{W}p", f"{W}tbl"}:
+            yield child
+            continue
+        # Structured document tags, custom XML and similar wrappers can hold
+        # ordinary visible body content. Recurse without descending into a
+        # paragraph or table that has already been yielded.
+        yield from _iter_docx_blocks(child)
+
+
 def _heading_level(text: str, style: str) -> int | None:
     style_match = re.search(r"heading\s*([1-9])", style, re.I)
     if style_match:
@@ -61,7 +73,7 @@ def _docx_document(path: Path) -> Document:
     table_text: list[str] = []
     table_count = 0
 
-    for child in body:
+    for child in _iter_docx_blocks(body):
         if child.tag == f"{W}p":
             text = "".join(node.text or "" for node in child.iter(f"{W}t")).strip()
             if not text:
@@ -86,7 +98,15 @@ def _docx_document(path: Path) -> Document:
             table_text.append(" | ".join(cells))
 
     drawing_count = len(root.findall(f".//{W}drawing"))
-    return Document(path, paragraphs, headings, table_count, drawing_count, table_text)
+    raw_text = " ".join(node.text or "" for node in root.iter(f"{W}t"))
+    raw_word_count = len(raw_text.split())
+    extracted_text = " ".join([*(paragraph.text for paragraph in paragraphs), *table_text])
+    extracted_word_count = len(extracted_text.split())
+    extraction_coverage = min(1.0, extracted_word_count / max(1, raw_word_count))
+    return Document(
+        path, paragraphs, headings, table_count, drawing_count, table_text,
+        raw_word_count, extraction_coverage,
+    )
 
 
 def load_document(filename: str | Path) -> Document:
@@ -99,4 +119,3 @@ def load_document(filename: str | Path) -> Document:
     if suffix in {".txt", ".md"}:
         return _plain_document(path)
     raise ValueError("Supported input formats are .docx, .md, and .txt")
-

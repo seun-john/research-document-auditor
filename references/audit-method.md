@@ -4,9 +4,11 @@ Read this reference when interpreting findings, explaining coverage, or deciding
 
 ## Current coverage
 
-The bundled v0.2 engine checks:
+The bundled v0.3 engine checks:
 
-- APA/Harvard-style author–date citations against bibliography author–year keys;
+- APA/Harvard-style author–date citations against bibliography author–year keys, including table citations;
+- multiple bibliography sections and common reference-heading variants;
+- bracketed numeric-style detection with explicit abstention from unsupported matching;
 - duplicate and unparseable bibliography entries;
 - conflicting sample-size and named-percentage candidates;
 - lexical alignment among objectives, research questions, and findings;
@@ -18,10 +20,13 @@ The bundled v0.2 engine checks:
 - title/author/year candidate matching for references without DOIs;
 - DOI/title/year consistency for registered identifiers;
 - DOI-linked OpenAlex retraction status when `--online-references` is used, with per-reference coverage labels.
+- visible DOCX extraction through common content controls, with a raw-text coverage warning.
 
 ## Finding families
 
 - `CIT`: citation and bibliography matching. `CIT002` and `CIT003` are high-value screens but can be affected by name variants and formatting.
+- `CIT007`: bracketed numeric citations were detected; author–date matching was not run.
+- `DOC001`: extracted DOCX text fell below the coverage threshold; inspect unsupported Word structures.
 - `REF001`: both Crossref and DataCite returned 404 for the supplied DOI. Verify the title independently before alleging fabrication.
 - `REF002`: a DOI resolves, but the registered title materially differs.
 - `REF003`: the supplied year differs from the registry year. Online-first and issue dates can legitimately differ.
@@ -43,13 +48,13 @@ Use “not found” or “could not verify” unless independent evidence suppor
 
 A strong fabrication finding requires corroborating searches beyond a DOI miss: title variants, author and year, appropriate disciplinary indexes, and author-output checks. The bundled engine does not yet perform that complete cascade.
 
-Claim-support findings require access to the source content. Distinguish full-text comparison from abstract-only comparison. The bundled engine performs neither in v0.2.
+Claim-support findings require access to the source content. Distinguish full-text comparison from abstract-only comparison. The bundled engine performs neither in v0.3.
 
 Retraction results use four states: `RETRACTED`, `NOT_RETRACTED`, `UNAVAILABLE`, and `NOT_CHECKED_NO_DOI`. Only the first two mean OpenAlex actually returned a DOI-linked work record. Anonymous OpenAlex access has a smaller daily budget; use `--openalex-api-key` with a user-supplied free key for larger batches. Never store the key in a report or cache.
 
 ## Known format limits
 
-- Numeric styles such as Vancouver are not parsed.
+- Numeric styles such as Vancouver are detected but not matched to numbered bibliography entries.
 - Footnotes, endnotes, comments, tracked changes, and embedded citation-manager fields are not inspected.
 - Author-name variants beyond the bundled corporate aliases, translated titles, and complex multi-work parentheticals need further hardening.
 - Structural requirements are generic until institutional or journal policy profiles are added.

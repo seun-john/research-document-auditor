@@ -4,10 +4,11 @@ A privacy-first command-line auditor for theses, reports, and journal manuscript
 
 This repository is the open-source engine. NovaPoint-specific templates, institutional profiles, and client rules can remain a separate private layer.
 
-## What v0.2 checks
+## What v0.3 checks
 
-- author–date citations missing from the bibliography;
+- author–date citations missing from the bibliography, including citations found in DOCX tables;
 - bibliography entries not cited in the manuscript;
+- multiple chapter-level reference sections and common headings such as `List of References`;
 - duplicate or unparseable bibliography entries;
 - contradictory sample-size and named-percentage candidates;
 - possible objective, research-question, and findings misalignment;
@@ -17,6 +18,7 @@ This repository is the open-source engine. NovaPoint-specific templates, institu
 - missing ethics, limitations, and AI-use statements;
 - optional live verification of DOI and non-DOI references using Crossref and DataCite;
 - DOI-linked retraction checks through OpenAlex, with explicit unavailable coverage when the service budget is exhausted.
+- DOCX extraction coverage, including visible content inside Word content controls.
 
 Every heuristic finding includes a confidence level. A low-confidence screen is a prompt for human review, not a verdict.
 
@@ -48,7 +50,7 @@ research-audit thesis.docx --output audit-report.md
 Run the optional live reference engine and keep a reusable evidence cache:
 
 ```powershell
-research-audit thesis.docx --online-references --reference-cache reference-cache.json --output audit-report.md
+research-audit thesis.docx --online-references --online-workers 4 --reference-cache reference-cache.json --output audit-report.md
 ```
 
 For fuller retraction coverage, create a free OpenAlex key and supply it at runtime. Do not commit the key:
@@ -64,6 +66,9 @@ research-audit manuscript.docx --format json --output audit-report.json --fail-o
 ```
 
 Supported inputs are `.docx`, `.md`, and `.txt`. The command exits `1` when it finds an issue at or above `--fail-on`, `2` for an input/runtime error, and `0` otherwise.
+Use `--min-confidence high` or `medium` to stop low-confidence heuristic findings from failing CI. Online progress is written to stderr.
+
+The optional cache stores hashed request keys, reduced public metadata fields, and expiry timestamps. It does not store manuscript text as a document, but bibliographic metadata can still be sensitive; keep cache files private and out of Git.
 
 ## Design
 
@@ -91,20 +96,20 @@ The live reference checker is an engine rather than the whole product. This lets
 
 ## Important limits
 
-- Citation matching currently targets APA/Harvard-style author–date citations. Numeric styles such as Vancouver need a separate parser.
+- Citation matching targets APA/Harvard-style author–date citations. Bracketed numeric styles are detected and clearly reported as unsupported instead of producing author–date mismatch findings.
 - DOCX extraction reads paragraph text, heading styles, tables, and drawing counts. It does not yet inspect footnotes, endnotes, comments, tracked changes, or embedded citation-manager fields.
 - Numeric and alignment findings are deliberately labelled as heuristic candidates.
 - DOI registration proves that a DOI exists, not that a source supports a claim.
-- Claim-to-source support is not automated in v0.2. Reliable checking needs the cited source’s full text or a clearly labelled abstract-only comparison.
+- Claim-to-source support is not automated in v0.3. Reliable checking needs the cited source’s full text or a clearly labelled abstract-only comparison.
 - An OpenAlex `UNAVAILABLE` result means retraction status was not established. Anonymous access has a smaller daily budget than a free keyed account.
 - A registry outage or missing index record is never treated as proof of fabrication.
 
 ## Next build slices
 
 1. Add full-text retrieval and sentence-to-source claim support with explicit full-text/abstract coverage labels.
-2. Harden citation parsing with CSL JSON/BibTeX/RIS, numeric citation styles, footnotes, and citation-manager fields.
+2. Add full numeric citation matching plus CSL JSON/BibTeX/RIS, footnotes, and citation-manager fields.
 3. Add custom YAML/JSON policy profiles for universities, journals, and private NovaPoint rules.
-4. Add bounded concurrency, resumable cache writes, and configurable service time budgets.
+4. Add configurable service time budgets and richer service-health summaries.
 5. Create a reviewable HTML report, then wrap the same engine in a paid upload-and-audit web interface.
 
 ## Publish this repository on GitHub
@@ -115,9 +120,9 @@ Using GitHub CLI:
 
 ```powershell
 git init
-git add .
+git add README.md SKILL.md pyproject.toml src tests references .github .gitignore
 git status
-git commit -m "Release Research Document Auditor v0.2.0"
+git commit -m "Release Research Document Auditor v0.3.0"
 gh auth login
 gh repo create research-document-auditor --public --source . --remote origin --push
 ```
@@ -130,7 +135,7 @@ git remote add origin https://github.com/YOUR-USERNAME/research-document-auditor
 git push -u origin main
 ```
 
-Before announcing the project, replace `YOUR-USERNAME`, confirm the MIT licence and author name are correct, and create a `v0.2.0` release from the tested commit.
+Before announcing the project, replace `YOUR-USERNAME`, confirm the MIT licence and author name are correct, and create a `v0.3.0` release from the tested commit.
 
 ## Test
 

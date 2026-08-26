@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.2",
+  "schema_version": "1.3",
   "source": "tests\\fixtures\\sample_manuscript.md",
   "profile": "thesis",
   "summary": {
@@ -22,24 +22,29 @@
     "bibliography_entries": 1,
     "parsed_bibliography_entries": 1,
     "bibliography_entries_with_doi": 0,
+    "bibliography_sections": 1,
+    "body_paragraphs_analysed": 11,
+    "citation_style": "author-date",
+    "docx_extraction_coverage": 1.0,
     "finding_codes": {
       "CIT002": 1,
-      "ALG003": 1,
+      "VIS001": 1,
       "CIT003": 1,
       "NUM001": 1,
       "NUM002": 1,
       "REQ_ETHICS": 1,
-      "VIS001": 1,
+      "ALG003": 1,
       "REQ_AI_USE": 1
     }
   },
   "coverage": {
     "citation_bibliography_matching": "automated (author–date styles)",
+    "document_extraction": "100.0% of visible DOCX text recovered",
     "numeric_consistency": "automated heuristic screening",
     "objective_question_finding_alignment": "automated lexical screening",
     "reference_existence_and_metadata": "not run (use --online-references)",
     "retraction_status": "not run (use --online-references)",
-    "claim_to_source_support": "not automated in v0.2; requires reliable source full text",
+    "claim_to_source_support": "not automated in v0.3; requires reliable source full text",
     "institutional_rules": "default public profile; custom NovaPoint rules are a later private layer"
   },
   "reference_verification": {
@@ -65,20 +70,19 @@
       "confidence": "high"
     },
     {
-      "code": "ALG003",
+      "code": "VIS001",
       "severity": "medium",
-      "title": "Objective may not be addressed in findings",
-      "message": "No finding or conclusion item has strong keyword overlap with this objective.",
+      "title": "Table is not mentioned in the text",
+      "message": "Table 1 has a caption but no cross-reference elsewhere in the manuscript.",
       "location": {
-        "paragraph": 2,
-        "section": "Objectives"
+        "paragraph": 9,
+        "section": null
       },
       "evidence": [
-        "Assess staff retention among nurses in Lagos hospitals.",
-        "Closest finding: The analysed sample included 140 participants. The response rate was 80% during data collection. The final response rate was 75%."
+        "Table 1 Respondent characteristics"
       ],
-      "suggestion": "Confirm that the findings explicitly answer this objective.",
-      "confidence": "low"
+      "suggestion": "Discuss Table 1 in the body text.",
+      "confidence": "high"
     },
     {
       "code": "CIT003",
@@ -141,19 +145,20 @@
       "confidence": "medium"
     },
     {
-      "code": "VIS001",
+      "code": "ALG003",
       "severity": "medium",
-      "title": "Table is not mentioned in the text",
-      "message": "Table 1 has a caption but no cross-reference elsewhere in the manuscript.",
+      "title": "Objective may not be addressed in findings",
+      "message": "No finding or conclusion item has strong keyword overlap with this objective.",
       "location": {
-        "paragraph": 9,
-        "section": null
+        "paragraph": 2,
+        "section": "Objectives"
       },
       "evidence": [
-        "Table 1 Respondent characteristics"
+        "Assess staff retention among nurses in Lagos hospitals.",
+        "Closest finding: The analysed sample included 140 participants. The response rate was 80% during data collection. The final response rate was 75%."
       ],
-      "suggestion": "Discuss Table 1 in the body text.",
-      "confidence": "high"
+      "suggestion": "Confirm that the findings explicitly answer this objective.",
+      "confidence": "low"
     },
     {
       "code": "REQ_AI_USE",
