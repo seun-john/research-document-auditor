@@ -41,10 +41,16 @@ class ReferenceEntry:
 
 
 def _is_bibliography_heading(text: str) -> bool:
-    normalized = re.sub(r"[^a-z ]", " ", text.casefold())
+    stripped = text.strip()
+    normalized = re.sub(r"[^a-z ]", " ", stripped.casefold())
     normalized = " ".join(normalized.split())
     if normalized in BIBLIOGRAPHY_HEADINGS:
         return True
+    # A section label is not a sentence. Without this, prose such as "See the
+    # references section" would open a bibliography range and hide the rest of
+    # the document from every body check.
+    if re.search(r"[.,;:!?]$", stripped):
+        return False
     words = normalized.split()
     return len(words) <= 5 and (
         any(word.startswith("bibliograph") for word in words)
@@ -58,19 +64,25 @@ def _is_appendix_boundary(text: str) -> bool:
     return bool(re.match(r"^(?:appendix|annex)\b", normalized))
 
 
+YEAR_PATTERN = re.compile(r"\b(?:19|20)\d{2}[a-z]?\b", re.I)
+
+
 def bibliography_ranges(document: Document) -> BibliographyRanges:
     candidates: list[tuple[int, int]] = []
-    for paragraph in document.paragraphs:
+    # Paragraph indexes are contiguous from 1, so the lookahead window is a
+    # slice. Rescanning the whole document per candidate made this quadratic.
+    ordered = list(document.paragraphs)
+    for position, paragraph in enumerate(ordered):
         if _is_bibliography_heading(paragraph.text):
             if re.search(r"\d\s*$", paragraph.text):
                 continue
             if paragraph.style.casefold().startswith(("toc", "tm")):
                 continue
-            following = [p.text for p in document.paragraphs if paragraph.index < p.index <= paragraph.index + 25]
+            following = ordered[position + 1 : position + 26]
             reference_like = sum(
                 1
-                for text in following
-                if len(text) >= 20 and re.search(r"\b(?:19|20)\d{2}[a-z]?\b", text, re.I)
+                for item in following
+                if len(item.text) >= 20 and YEAR_PATTERN.search(item.text)
             )
             candidates.append((reference_like, paragraph.index))
     if not candidates:
@@ -143,16 +155,36 @@ def _surname(value: str) -> str:
     return re.sub(r"'s$", "", surname)
 
 
+NON_AUTHOR_WORDS = {
+    "a", "an", "the", "to", "from", "since", "between", "until", "through", "during",
+    "appendix", "annex", "edition", "table", "figure", "chapter", "section", "version",
+    "model", "method", "source", "phase", "classification", "range", "period",
+    "vol", "volume", "no", "pp", "p", "ed", "eds", "trans", "para", "fig",
+}
+
+# Structure words that never appear inside a real author position. A citation
+# such as "(Ministry of Health, 2020)" keeps "of", so only the framing words
+# that signal a cross-reference or a date range are rejected here.
+_NON_AUTHOR_PATTERN = re.compile(
+    r"\b(?:appendix|annex|edition|table|figure|chapter|section|see\s+also|"
+    r"from|to|between|until|through)\b",
+    re.I,
+)
+
+
 def _valid_parenthetical_author(value: str) -> bool:
-    cleaned = re.sub(r"^(?:see|e\.g\.|cf\.)\s+", "", value.strip(), flags=re.I)
-    if not cleaned or not cleaned[0].isupper() or re.search(r"\d", cleaned):
+    cleaned = re.sub(r"^(?:see|e\.g\.|i\.e\.|cf\.)\s+", "", value.strip(), flags=re.I)
+    if not cleaned or not cleaned[0].isupper():
         return False
-    if re.search(r"\b(?:appendix|annex|edition|table|figure|chapter|section|from|to|between)\b", cleaned, re.I):
+    # A leading digit means the segment is a number, not a name; a second
+    # four-digit year means this is a range such as "(2010 to 2020)". Interior
+    # digits are kept so standards like "ISO 14001" still parse.
+    if re.match(r"^\d", cleaned) or re.search(r"\b(?:19|20)\d{2}\b", cleaned):
+        return False
+    if _NON_AUTHOR_PATTERN.search(cleaned):
         return False
     surname = _surname(cleaned)
-    return len(surname) >= 2 and surname not in {
-        "a", "an", "the", "to", "from", "since", "between", "appendix", "edition",
-    }
+    return len(surname) >= 2 and surname not in NON_AUTHOR_WORDS
 
 
 def parse_in_text_citations(
@@ -173,7 +205,9 @@ def parse_in_text_citations(
         # Parenthetical author-date groups: (Smith, 2020; Doe & Roe, 2021).
         for group in re.findall(r"\(([^()]*?(?:19|20)\d{2}[a-z]?[^()]*)\)", text):
             for part in re.split(r"\s*;\s*", group):
-                match = re.match(r"\s*(.+?)\s*,\s*((?:19|20)\d{2}[a-z]?)\b", part)
+                # Harvard omits the comma as often as APA includes it, so accept
+                # either separator and let the author test reject non-citations.
+                match = re.match(r"\s*(.+?)\s*(?:,\s*|\s+)((?:19|20)\d{2}[a-z]?)\b", part)
                 if match and _valid_parenthetical_author(match.group(1)):
                     author = _surname(match.group(1))
                     if author:
@@ -185,10 +219,7 @@ def parse_in_text_citations(
             text,
         ):
             author = _surname(match.group(1))
-            if len(author) < 2 or author in {
-                "a", "classification", "figure", "table", "chapter", "section", "model",
-                "method", "source", "version", "phase", "appendix", "edition", "to", "from",
-            }:
+            if len(author) < 2 or author in NON_AUTHOR_WORDS:
                 continue
             key = CitationKey(author, match.group(2).lower())
             occurrences.append(CitationOccurrence(key, paragraph.index, match.group(0)))
@@ -233,22 +264,30 @@ def parse_references(
     return entries
 
 
-def detect_citation_style(document: Document, ranges: BibliographyRanges | None = None) -> str:
+def detect_citation_style(
+    document: Document,
+    ranges: BibliographyRanges | None = None,
+    citations: list[CitationOccurrence] | None = None,
+) -> str:
     selected = ranges if ranges is not None else bibliography_ranges(document)
     body = "\n".join(
         paragraph.text for paragraph in document.paragraphs
         if not _inside_ranges(paragraph.index, selected)
     )
     numeric = len(re.findall(r"\[\s*\d+(?:\s*[,;–-]\s*\d+)*\s*\]", body))
-    author_date = len(parse_in_text_citations(document, ranges=selected))
+    # Reuse the caller's parse when it has one; parsing a thesis twice is the
+    # single largest avoidable cost in an offline audit.
+    author_date = len(citations if citations is not None else parse_in_text_citations(document, ranges=selected))
     return "numeric" if numeric > 0 and author_date == 0 else "author-date"
 
 
-def citation_data(document: Document) -> tuple[list[CitationOccurrence], list[ReferenceEntry], int | None]:
-    ranges = bibliography_ranges(document)
-    start = ranges[0][0] if ranges else None
+def citation_data(
+    document: Document, ranges: BibliographyRanges | None = None
+) -> tuple[list[CitationOccurrence], list[ReferenceEntry], int | None]:
+    selected = bibliography_ranges(document) if ranges is None else ranges
+    start = selected[0][0] if selected else None
     return (
-        parse_in_text_citations(document, ranges=ranges),
-        parse_references(document, ranges=ranges),
+        parse_in_text_citations(document, ranges=selected),
+        parse_references(document, ranges=selected),
         start,
     )

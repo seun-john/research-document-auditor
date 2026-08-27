@@ -21,10 +21,13 @@ SUCCESS_TTL_SECONDS = 180 * 24 * 60 * 60
 NEGATIVE_TTL_SECONDS = 30 * 24 * 60 * 60
 
 
-def _get_json(url: str, bearer: str | None = None) -> tuple[int | None, dict | None, str | None]:
+def _redact(text: str) -> str:
+    """Strip credentials out of anything that may reach a report or the console."""
+    return re.sub(r"(api_key=)[^&\s]+", r"\1[redacted]", text)
+
+
+def _get_json(url: str) -> tuple[int | None, dict | None, str | None]:
     headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
-    if bearer:
-        headers["Authorization"] = f"Bearer {bearer}"
     request = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
@@ -32,7 +35,7 @@ def _get_json(url: str, bearer: str | None = None) -> tuple[int | None, dict | N
     except urllib.error.HTTPError as exc:
         return exc.code, None, None
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-        return None, None, str(exc)
+        return None, None, _redact(str(exc))
 
 
 def _cited_title(raw: str) -> str:
@@ -217,7 +220,7 @@ class DoiRegistryEngine:
         self._openalex_disabled = False
         self._state_lock = threading.Lock()
 
-    def _request(self, url: str, bearer: str | None = None) -> tuple[int | None, dict | None, str | None]:
+    def _request(self, url: str) -> tuple[int | None, dict | None, str | None]:
         cached = self.cache.get(url)
         if cached is not None:
             return cached
@@ -225,10 +228,7 @@ class DoiRegistryEngine:
         body: dict | None = None
         error: str | None = None
         for attempt in range(3):
-            if bearer:
-                status, body, error = _get_json(url, bearer)
-            else:
-                status, body, error = _get_json(url)
+            status, body, error = _get_json(url)
             if error or status == 429 or (status is not None and status >= 500):
                 if attempt < 2:
                     time.sleep(1.0 * (attempt + 1))
@@ -497,7 +497,15 @@ class DoiRegistryEngine:
                 )
             ], "RETRACTED"
         encoded = urllib.parse.quote(doi, safe="/")
-        url = f"https://api.openalex.org/works/doi:{encoded}"
+        # OpenAlex documents an api_key query parameter, and keys the polite
+        # pool on mailto. Neither belongs in an Authorization header.
+        parameters = {}
+        if self.email:
+            parameters["mailto"] = self.email
+        if self.openalex_api_key:
+            parameters["api_key"] = self.openalex_api_key
+        query = f"?{urllib.parse.urlencode(parameters)}" if parameters else ""
+        url = f"https://api.openalex.org/works/doi:{encoded}{query}"
         cached = self.cache.get(url)
         if cached is not None:
             status, body, _ = cached
@@ -506,7 +514,7 @@ class DoiRegistryEngine:
                 disabled = self._openalex_disabled
             if disabled:
                 return [], "UNAVAILABLE"
-            status, body, error = self._request(url, bearer=self.openalex_api_key)
+            status, body, error = self._request(url)
             if error or status == 429 or (status is not None and status >= 500):
                 with self._state_lock:
                     self._openalex_disabled = True

@@ -17,6 +17,7 @@ from research_auditor.engine import audit_document
 from research_auditor.extractors import load_document
 from research_auditor.models import AuditReport, Document, Finding
 from research_auditor.reference_engines.doi_registry import (
+    _redact,
     JsonRequestCache,
     NEGATIVE_TTL_SECONDS,
     DoiRegistryEngine,
@@ -183,6 +184,68 @@ class AuditRegressionTests(unittest.TestCase):
                 "status": 404, "body": None, "timestamp": time.time() - NEGATIVE_TTL_SECONDS - 1,
             }}}), encoding="utf-8")
             self.assertIsNone(JsonRequestCache(path).get(expired_url))
+
+    def test_harvard_citations_without_a_comma_are_matched(self):
+        report = audit_markdown(
+            "# Body\nEarlier work (Adeyemi 2019) shaped this, and (Okafor and Bello 2021) confirmed it.\n"
+            "# References\nAdeyemi, K. (2019). Something. Journal.\n"
+            "Okafor, T., & Bello, A. (2021). Another thing. Journal.\n"
+        )
+        self.assertEqual(report.stats["citation_occurrences"], 2)
+        self.assertFalse(any(item.code in {"CIT002", "CIT003"} for item in report.findings))
+
+    def test_standard_numbers_survive_the_year_range_guard(self):
+        report = audit_markdown(
+            "# Body\nThe standard (ISO 14001, 2015) applied. The period (2010 to 2020) was covered.\n"
+            "# References\nISO. (2015). ISO 14001 Environmental management systems. ISO.\n"
+        )
+        self.assertEqual(report.stats["citation_occurrences"], 1)
+        self.assertFalse(any(item.code == "CIT002" for item in report.findings))
+
+    def test_disclosures_without_an_auxiliary_verb_are_recognised(self):
+        for statement in (
+            "Ethical approval obtained from the committee.",
+            "Ethical clearance was granted by the review board.",
+            "Informed consent was obtained from every participant.",
+        ):
+            with self.subTest(statement=statement):
+                report = audit_markdown(f"# Methods\n{statement}\n# References\nSmith, J. (2020). Study. Journal.\n")
+                self.assertNotIn("REQ_ETHICS", {item.code for item in report.findings})
+
+        for statement in ("Limitations are noted below.", "Limitations of this study include sampling."):
+            with self.subTest(statement=statement):
+                report = audit_markdown(f"# Discussion\n{statement}\n# References\nSmith, J. (2020). Study. Journal.\n")
+                self.assertNotIn("REQ_LIMITATIONS", {item.code for item in report.findings})
+
+    def test_prose_mentioning_references_does_not_open_a_bibliography(self):
+        report = audit_markdown(
+            "# Body\nSee the references section.\nEvidence exists (Adeyemi, 2020) across sites in 2019.\n"
+            "# References\nAdeyemi, T. (2020). Evidence title. Journal.\n"
+        )
+        self.assertEqual(report.stats["bibliography_sections"], 1)
+        self.assertEqual(report.stats["citation_occurrences"], 1)
+
+    def test_openalex_receives_contact_and_key_as_query_parameters(self):
+        with patch("research_auditor.reference_engines.doi_registry._get_json") as get_json:
+            get_json.side_effect = [
+                (200, {"message": {"title": ["Study title"], "issued": {"date-parts": [[2020]]}}}, None),
+                (200, {"is_retracted": False}, None),
+            ]
+            entry = ReferenceEntry(
+                CitationKey("smith", "2020"), 4,
+                "Smith, J. (2020). Study title. https://doi.org/10.9999/example", "10.9999/example",
+            )
+            DoiRegistryEngine("person@example.com", delay=0, openalex_api_key="SECRET").audit([entry])
+        openalex_url = get_json.call_args_list[1].args[0]
+        self.assertIn("mailto=person%40example.com", openalex_url)
+        self.assertIn("api_key=SECRET", openalex_url)
+        self.assertEqual(len(get_json.call_args_list[1].args), 1)
+
+    def test_service_errors_do_not_leak_the_api_key(self):
+        self.assertEqual(
+            _redact("<urlopen error works/doi:10.1/x?mailto=a@b.com&api_key=SECRET failed>"),
+            "<urlopen error works/doi:10.1/x?mailto=a@b.com&api_key=[redacted] failed>",
+        )
 
 
 if __name__ == "__main__":

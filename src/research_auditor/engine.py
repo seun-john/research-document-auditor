@@ -42,8 +42,8 @@ def audit_document(
     document = load_document(filename)
     selected_profile = detect_profile(document.text) if profile == "auto" else profile
     bibliography_sections = bibliography_ranges(document)
-    citations, references, bibliography = citation_data(document)
-    citation_style = detect_citation_style(document, bibliography_sections)
+    citations, references, bibliography = citation_data(document, bibliography_sections)
+    citation_style = detect_citation_style(document, bibliography_sections, citations)
 
     findings = []
     findings.extend(check_extraction_coverage(document))

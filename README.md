@@ -96,12 +96,12 @@ The live reference checker is an engine rather than the whole product. This lets
 
 ## Important limits
 
-- Citation matching targets APA/Harvard-style author–date citations. Bracketed numeric styles are detected and clearly reported as unsupported instead of producing author–date mismatch findings.
-- DOCX extraction reads paragraph text, heading styles, tables, and drawing counts. It does not yet inspect footnotes, endnotes, comments, tracked changes, or embedded citation-manager fields.
+- Citation matching targets APA/Harvard-style author–date citations, with or without the comma: `(Smith, 2020)` and `(Smith 2020)` both parse. Bracketed numeric styles are detected and clearly reported as unsupported instead of producing author–date mismatch findings.
+- DOCX extraction reads paragraph text, heading styles, content controls, text boxes, tables, and drawing counts. It does not yet inspect footnotes, endnotes, comments, tracked changes, or embedded citation-manager fields. A `DOC001` finding is raised when recovered text falls below 90% of the visible word tokens.
 - Numeric and alignment findings are deliberately labelled as heuristic candidates.
 - DOI registration proves that a DOI exists, not that a source supports a claim.
 - Claim-to-source support is not automated in v0.3. Reliable checking needs the cited source’s full text or a clearly labelled abstract-only comparison.
-- An OpenAlex `UNAVAILABLE` result means retraction status was not established. Anonymous access has a smaller daily budget than a free keyed account.
+- An OpenAlex `UNAVAILABLE` result means retraction status was not established. OpenAlex now meters anonymous access against a daily budget and can return `429` once it is spent, so confirm your own quota before treating `UNAVAILABLE` as unusual. `--openalex-api-key` is sent as the documented `api_key` query parameter and is redacted from any error text the report shows.
 - A registry outage or missing index record is never treated as proof of fabrication.
 
 ## Next build slices

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from bisect import bisect_right
 from collections import defaultdict
 
 from .citations import BibliographyRanges, CitationOccurrence, ReferenceEntry
@@ -170,12 +171,25 @@ def check_abbreviations(document: Document, bibliography: BibliographyScope) -> 
         "THE", "OF", "IN", "ON", "TO", "FOR", "HEALTH", "CHAPTER", "LIST", "DR",
     }
     counts: dict[str, int] = defaultdict(int)
+    first_offset: dict[str, int] = {}
     for match in tokens:
-        counts[match.group(0)] += 1
+        token = match.group(0)
+        counts[token] += 1
+        first_offset.setdefault(token, match.start())
+
+    # Map an offset in the joined body back to its paragraph by binary search,
+    # rather than re-scanning every paragraph once per undefined abbreviation.
+    boundaries: list[int] = []
+    running = 0
+    for paragraph in body_paragraphs:
+        boundaries.append(running)
+        running += len(paragraph.text) + 1
+
     undefined = sorted(token for token, count in counts.items() if token not in definitions | ignored and count >= 2)
     findings: list[Finding] = []
     for token in undefined:
-        paragraph = next((p.index for p in body_paragraphs if re.search(rf"\b{re.escape(token)}\b", p.text)), None)
+        position = bisect_right(boundaries, first_offset[token]) - 1
+        paragraph = body_paragraphs[position].index if 0 <= position < len(body_paragraphs) else None
         findings.append(
             Finding(
                 "ABR001",
@@ -428,14 +442,19 @@ def check_required_statements(
     text = "\n".join(paragraph.text for paragraph in _body_paragraphs(document, bibliography)).casefold()
     headings = "\n".join(heading.text for heading in document.headings).casefold()
     requirements = {
+        # Anchored on the disclosure's subject rather than on one phrasing of it.
+        # A missing-disclosure finding against a manuscript that carries the
+        # disclosure is worse than a loose match, so the auxiliary verb is
+        # optional throughout and intervening words are allowed.
         "ethics": (
-            r"ethical approval (?:was|has been|was not)|ethical considerations?|ethics (?:approval|committee)|"
-            r"institutional review board|informed consent (?:was|has been|was not)",
+            r"ethical (?:approval|clearance)\b|ethical considerations?|ethics (?:approval|clearance|committee|board)|"
+            r"institutional review board|\birb\b|informed consent\b|consent (?:was|were) (?:obtained|sought|given)",
             "ethics or consent statement",
         ),
         "limitations": (
-            r"\blimitations?\b\s*(?:of (?:this|the) study|were|was|include|included|noted|:)"
-            r"|(?:this|the) study (?:was|is) limited by",
+            r"\blimitations?\b\s*(?:\w+\s+){0,3}?(?:of (?:this|the) study|are|were|was|is|include|included|"
+            r"noted|acknowledged|discussed|apply|exist|:)"
+            r"|(?:this|the) study (?:was|is) limited by|\blimitations? of (?:this|the) (?:study|research|work)\b",
             "limitations statement",
         ),
         "ai_use": (
