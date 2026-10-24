@@ -1,14 +1,33 @@
 from __future__ import annotations
 
 import re
+from bisect import bisect_right
 from collections import defaultdict
 
-from .citations import CitationOccurrence, ReferenceEntry
+from .citations import BibliographyRanges, CitationOccurrence, ReferenceEntry
 from .models import Document, Finding, Location
+
+BibliographyScope = int | BibliographyRanges | None
+
+
+def _in_bibliography(paragraph_index: int, bibliography: BibliographyScope) -> bool:
+    if bibliography is None:
+        return False
+    if isinstance(bibliography, int):
+        return paragraph_index >= bibliography
+    return any(start <= paragraph_index < end for start, end in bibliography)
+
+
+def _body_paragraphs(document: Document, bibliography: BibliographyScope):
+    return [
+        paragraph for paragraph in document.paragraphs
+        if not _in_bibliography(paragraph.index, bibliography)
+    ]
 
 
 def check_citation_integrity(
-    citations: list[CitationOccurrence], references: list[ReferenceEntry], bibliography: int | None
+    citations: list[CitationOccurrence], references: list[ReferenceEntry], bibliography: BibliographyScope,
+    citation_style: str = "author-date",
 ) -> list[Finding]:
     findings: list[Finding] = []
     if bibliography is None:
@@ -19,6 +38,16 @@ def check_citation_integrity(
                 "Bibliography section not found",
                 "No heading named References, Bibliography, Works Cited, or Literature Cited was found.",
                 suggestion="Add or correctly label the bibliography section.",
+            )
+        ]
+
+    if citation_style == "numeric":
+        return [
+            Finding(
+                "CIT007", "info", "Numeric citation style detected",
+                "Author–date citation matching was not applied because bracketed numeric citations were detected.",
+                suggestion="Use a numeric-style parser or review citation-to-reference numbering manually.",
+                confidence="high",
             )
         ]
 
@@ -116,10 +145,10 @@ def check_citation_integrity(
     return findings
 
 
-def check_abbreviations(document: Document, bibliography: int | None) -> list[Finding]:
+def check_abbreviations(document: Document, bibliography: BibliographyScope) -> list[Finding]:
     body_paragraphs = []
     for paragraph in document.paragraphs:
-        if bibliography and paragraph.index >= bibliography:
+        if _in_bibliography(paragraph.index, bibliography):
             continue
         letters = [char for char in paragraph.text if char.isalpha()]
         uppercase_ratio = sum(char.isupper() for char in letters) / max(1, len(letters))
@@ -135,19 +164,32 @@ def check_abbreviations(document: Document, bibliography: int | None) -> list[Fi
         match.group(1)
         for match in re.finditer(r"\b([A-Z][A-Z0-9-]{1,7})\s+\([A-Za-z][A-Za-z /&-]{3,80}\)", body)
     )
-    tokens = list(re.finditer(r"\b[A-Z](?:[A-Z0-9-]{0,6}[A-Z0-9])?\b", body))
+    tokens = list(re.finditer(r"\b[A-Z][A-Z0-9-]{0,5}[A-Z0-9]\b", body))
     ignored = {
         "AI", "APA", "DOI", "URL", "PDF", "HTML", "XML", "OR", "AND", "CI", "SD",
         "UK", "US", "USA", "EU", "UN", "WHO", "IBM", "SPSS", "ANOVA", "COVID-19",
         "THE", "OF", "IN", "ON", "TO", "FOR", "HEALTH", "CHAPTER", "LIST", "DR",
     }
     counts: dict[str, int] = defaultdict(int)
+    first_offset: dict[str, int] = {}
     for match in tokens:
-        counts[match.group(0)] += 1
+        token = match.group(0)
+        counts[token] += 1
+        first_offset.setdefault(token, match.start())
+
+    # Map an offset in the joined body back to its paragraph by binary search,
+    # rather than re-scanning every paragraph once per undefined abbreviation.
+    boundaries: list[int] = []
+    running = 0
+    for paragraph in body_paragraphs:
+        boundaries.append(running)
+        running += len(paragraph.text) + 1
+
     undefined = sorted(token for token, count in counts.items() if token not in definitions | ignored and count >= 2)
     findings: list[Finding] = []
     for token in undefined:
-        paragraph = next((p.index for p in body_paragraphs if re.search(rf"\b{re.escape(token)}\b", p.text)), None)
+        position = bisect_right(boundaries, first_offset[token]) - 1
+        paragraph = body_paragraphs[position].index if 0 <= position < len(body_paragraphs) else None
         findings.append(
             Finding(
                 "ABR001",
@@ -209,9 +251,9 @@ def check_headings(document: Document) -> list[Finding]:
     return findings
 
 
-def check_tables_and_figures(document: Document, bibliography: int | None) -> list[Finding]:
+def check_tables_and_figures(document: Document, bibliography: BibliographyScope) -> list[Finding]:
     findings: list[Finding] = []
-    body_paragraphs = [p for p in document.paragraphs if not bibliography or p.index < bibliography]
+    body_paragraphs = _body_paragraphs(document, bibliography)
     caption_re = re.compile(r"^(Table|Figure)\s+([A-Za-z]?\d+(?:\.\d+)*)\b", re.I)
     captions: list[tuple[str, str, int, str]] = []
     for paragraph in body_paragraphs:
@@ -222,7 +264,8 @@ def check_tables_and_figures(document: Document, bibliography: int | None) -> li
     for kind, number, paragraph_index, raw in captions:
         mention = re.compile(rf"\b{kind}\s+{re.escape(number)}\b", re.I)
         elsewhere = [p for p in body_paragraphs if p.index != paragraph_index and mention.search(p.text)]
-        if not elsewhere:
+        mentioned_in_table = any(mention.search(text) for text in document.table_text)
+        if not elsewhere and not mentioned_in_table:
             findings.append(
                 Finding(
                     "VIS001",
@@ -262,8 +305,8 @@ def check_tables_and_figures(document: Document, bibliography: int | None) -> li
     return findings
 
 
-def check_numeric_consistency(document: Document, bibliography: int | None) -> list[Finding]:
-    body = [p for p in document.paragraphs if not bibliography or p.index < bibliography]
+def check_numeric_consistency(document: Document, bibliography: BibliographyScope) -> list[Finding]:
+    body = _body_paragraphs(document, bibliography)
     findings: list[Finding] = []
     sample_values: dict[int, list[int]] = defaultdict(list)
     sample_pattern = re.compile(
@@ -393,25 +436,66 @@ def check_alignment(document: Document) -> list[Finding]:
     return output
 
 
-def check_required_statements(document: Document, profile: str) -> list[Finding]:
-    text = document.text.casefold()
+def check_required_statements(
+    document: Document, profile: str, bibliography: BibliographyScope = None
+) -> list[Finding]:
+    text = "\n".join(paragraph.text for paragraph in _body_paragraphs(document, bibliography)).casefold()
+    headings = "\n".join(heading.text for heading in document.headings).casefold()
     requirements = {
-        "ethics": (r"ethical approval|ethical considerations?|ethics (?:approval|committee)|institutional review board|informed consent", "ethics or consent statement"),
-        "limitations": (r"\blimitations?\b", "limitations statement"),
-        "ai_use": (r"artificial intelligence|generative ai|large language model|chatgpt|ai[- ]use|ai assistance", "AI-use disclosure"),
+        # Anchored on the disclosure's subject rather than on one phrasing of it.
+        # A missing-disclosure finding against a manuscript that carries the
+        # disclosure is worse than a loose match, so the auxiliary verb is
+        # optional throughout and intervening words are allowed.
+        "ethics": (
+            r"ethical (?:approval|clearance)\b|ethical considerations?|ethics (?:approval|clearance|committee|board)|"
+            r"institutional review board|\birb\b|informed consent\b|consent (?:was|were) (?:obtained|sought|given)",
+            "ethics or consent statement",
+        ),
+        "limitations": (
+            r"\blimitations?\b\s*(?:\w+\s+){0,3}?(?:of (?:this|the) study|are|were|was|is|include|included|"
+            r"noted|acknowledged|discussed|apply|exist|:)"
+            r"|(?:this|the) study (?:was|is) limited by|\blimitations? of (?:this|the) (?:study|research|work)\b",
+            "limitations statement",
+        ),
+        "ai_use": (
+            r"(?:no|not|without) (?:generative |artificial )?ai (?:was )?used|"
+            r"(?:used|use of|assistance from) (?:chatgpt|generative ai|artificial intelligence|a large language model)|"
+            r"ai[- ]use (?:statement|disclosure)",
+            "AI-use disclosure",
+        ),
     }
     severity = {"ethics": "medium", "limitations": "medium", "ai_use": "low"}
     output = []
     for key, (pattern, label) in requirements.items():
-        if not re.search(pattern, text, re.I):
+        heading_patterns = {
+            "ethics": r"(?:^|\n)(?:ethical considerations?|ethics|research ethics)(?:$|\n)",
+            "limitations": r"(?:^|\n)(?:study )?limitations?(?:$|\n)",
+            "ai_use": r"(?:^|\n)(?:ai[- ]use|artificial intelligence use|generative ai) (?:statement|disclosure)(?:$|\n)",
+        }
+        if not re.search(pattern, text, re.I) and not re.search(heading_patterns[key], headings, re.I):
+            article = "an" if label[0].casefold() in "aeiou" else "a"
             output.append(
                 Finding(
                     f"REQ_{key.upper()}",
                     severity[key],
                     f"Missing {label}",
                     f"No {label} was detected under the {profile} profile.",
-                    suggestion=f"Add an {label}, or disable this rule in an institutional profile when it does not apply.",
+                    suggestion=f"Add {article} {label}, or disable this rule in an institutional profile when it does not apply.",
                     confidence="medium",
                 )
             )
     return output
+
+
+def check_extraction_coverage(document: Document) -> list[Finding]:
+    if document.raw_word_count is None or document.extraction_coverage >= 0.90:
+        return []
+    return [
+        Finding(
+            "DOC001", "high", "DOCX extraction may be incomplete",
+            f"Only {document.extraction_coverage:.1%} of visible DOCX word tokens were recovered for analysis.",
+            evidence=[f"Raw XML words: {document.raw_word_count}", f"Coverage: {document.extraction_coverage:.1%}"],
+            suggestion="Inspect content controls, text boxes, embedded objects, or unsupported Word structures before trusting the audit.",
+            confidence="high",
+        )
+    ]

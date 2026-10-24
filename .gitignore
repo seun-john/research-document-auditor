@@ -7,5 +7,5 @@ build/
 *.egg-info/
 audit-report.*
 audits/
-reference-cache.json
-.qa-*/
+reference-cache*.json*
+.qa-*

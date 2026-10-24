@@ -22,13 +22,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--email", help="contact email for polite API pools (never inferred or invented)")
     parser.add_argument("--reference-cache", help="optional JSON cache for repeatable online metadata requests")
     parser.add_argument("--openalex-api-key", help="optional OpenAlex key for a larger free daily API budget")
+    parser.add_argument("--online-workers", type=int, default=4, help="bounded concurrent reference lookups (default: 4)")
     parser.add_argument("--fail-on", choices=("none", "high", "medium", "low", "info"), default="high")
+    parser.add_argument("--min-confidence", choices=("high", "medium", "low"), default="low", help="minimum confidence considered by --fail-on")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.online_workers < 1 or args.online_workers > 16:
+        print("research-audit: error: --online-workers must be between 1 and 16", file=sys.stderr)
+        return 2
+
+    def progress(completed, total, entry):
+        print(f"Checked reference {completed}/{total}: {entry.raw[:70]}", file=sys.stderr)
+
     try:
         report = audit_document(
             args.document,
@@ -37,6 +46,8 @@ def main(argv: list[str] | None = None) -> int:
             email=args.email,
             reference_cache=args.reference_cache,
             openalex_api_key=args.openalex_api_key,
+            online_workers=args.online_workers,
+            progress=progress if args.online_references else None,
         )
     except (OSError, ValueError) as exc:
         print(f"research-audit: error: {exc}", file=sys.stderr)
@@ -54,8 +65,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.fail_on == "none":
         return 0
     ranks = {"high": 4, "medium": 3, "low": 2, "info": 1}
+    confidence_ranks = {"high": 3, "medium": 2, "low": 1}
     threshold = ranks[args.fail_on]
-    return 1 if any(ranks.get(finding.severity, 0) >= threshold for finding in report.findings) else 0
+    confidence_threshold = confidence_ranks[args.min_confidence]
+    return 1 if any(
+        ranks.get(finding.severity, 0) >= threshold
+        and confidence_ranks.get(finding.confidence, 0) >= confidence_threshold
+        for finding in report.findings
+    ) else 0
 
 
 if __name__ == "__main__":

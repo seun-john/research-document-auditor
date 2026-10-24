@@ -27,6 +27,8 @@ class Document:
     table_count: int = 0
     drawing_count: int = 0
     table_text: list[str] = field(default_factory=list)
+    raw_word_count: int | None = None
+    extraction_coverage: float = 1.0
 
     @property
     def text(self) -> str:
@@ -87,7 +89,7 @@ class AuditReport:
         for finding in self.findings:
             counts[finding.severity] = counts.get(finding.severity, 0) + 1
         return {
-            "schema_version": "1.2",
+            "schema_version": "1.3",
             "source": self.source,
             "profile": self.profile,
             "summary": {"total": len(self.findings), "by_severity": counts},

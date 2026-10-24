@@ -1,8 +1,12 @@
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 import zipfile
 from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
 
 from research_auditor.citations import CitationKey, ReferenceEntry, bibliography_start, citation_data
 from research_auditor.checks import check_citation_integrity, check_numeric_consistency
@@ -121,7 +125,7 @@ class AuditTests(unittest.TestCase):
 
     def test_reports_are_serializable(self):
         report = audit_document(FIXTURE)
-        self.assertIn('"schema_version": "1.2"', render_json(report))
+        self.assertIn('"schema_version": "1.3"', render_json(report))
         self.assertIn("# Research Document Audit", render_markdown(report))
 
     def test_rejects_unsupported_format(self):
