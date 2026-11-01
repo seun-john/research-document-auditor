@@ -27,7 +27,7 @@ Every heuristic finding includes a confidence level. A low-confidence screen is 
 The repository root is the skill. Clone the complete repository into a skills directory supported by Codex, Claude Code, or another compatible coding agent:
 
 ```powershell
-git clone <repository-url> "$env:USERPROFILE\.codex\skills\research-document-auditor"
+git clone https://github.com/seun-john/research-document-auditor.git "$env:USERPROFILE\.codex\skills\research-document-auditor"
 cd "$env:USERPROFILE\.codex\skills\research-document-auditor"
 python scripts\audit.py manuscript.docx --output manuscript-audit.md --fail-on none
 ```
@@ -111,31 +111,6 @@ The live reference checker is an engine rather than the whole product. This lets
 3. Add custom YAML/JSON policy profiles for universities, journals, and private NovaPoint rules.
 4. Add configurable service time budgets and richer service-health summaries.
 5. Create a reviewable HTML report, then wrap the same engine in a paid upload-and-audit web interface.
-
-## Publish this repository on GitHub
-
-The `.gitignore` excludes local audit reports, caches, virtual environments, and generated build files. Review `git status` before every public push so no manuscript-derived data is included.
-
-Using GitHub CLI:
-
-```powershell
-git init
-git add README.md SKILL.md pyproject.toml src tests references .github .gitignore
-git status
-git commit -m "Release Research Document Auditor v0.3.0"
-gh auth login
-gh repo create research-document-auditor --public --source . --remote origin --push
-```
-
-Without GitHub CLI, create an empty public repository on GitHub, then run the `git init` through `git commit` commands above followed by:
-
-```powershell
-git branch -M main
-git remote add origin https://github.com/YOUR-USERNAME/research-document-auditor.git
-git push -u origin main
-```
-
-Before announcing the project, replace `YOUR-USERNAME`, confirm the MIT licence and author name are correct, and create a `v0.3.0` release from the tested commit.
 
 ## Test
 
